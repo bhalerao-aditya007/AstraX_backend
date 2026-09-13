@@ -1,5 +1,6 @@
 [workspace]
 members = ["cmd/server","libs/document", "libs/orm", "migration"]
+resolver = "3"
 
 [workspace.dependencies]
 document = { path = "libs/document" }
