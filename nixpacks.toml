@@ -1,0 +1,15 @@
+# nixpacks.toml for Railway Nixpacks build pipeline
+[variables]
+RAILWAY_RUST_VERSION = "1.94.0"
+RUSTC_VERSION = "1.94.0"
+
+[phases.setup]
+nixPkgs = ["pkg-config", "openssl"]
+
+[phases.build]
+cmds = [
+  "cargo build --release --package server --package migration"
+]
+
+[start]
+cmd = "./target/release/migration up && ./target/release/server"
