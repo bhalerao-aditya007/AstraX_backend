@@ -59,7 +59,7 @@ impl DocumentProcessor for FirOcrProcessor {
             // Retrieve the NER results that were saved by the NerProcessor
             if let Some(model) = document::Entity::find_by_id(doc_id).one(db).await.map_err(DocumentErrors::DatabaseError)? {
                 if let Some(ner_json) = model.extracted_information {
-                    if let (serde_json::Value::Object(ref mut parsed_map), serde_json::Value::Object(ner_map)) = (&mut parsed, ner_json) {
+                    if let (serde_json::Value::Object(parsed_map), serde_json::Value::Object(ner_map)) = (&mut parsed, ner_json) {
                         for (k, v) in ner_map {
                             parsed_map.insert(k, v);
                         }

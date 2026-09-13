@@ -283,6 +283,30 @@ impl DocumentProcessor for NvidiaKimiProcessor {
                     "reasoning_budget": 4096
                 })
             }
+            DocumentType::Video => {
+                let prompt = format!(
+                    "Extract all surveillance details, timestamps, observed vehicles, persons, license plates, and incident chronology from this video evidence into JSON.\nDocument Title: {}\nDescription: {}",
+                    doc_model.title, doc_model.description
+                );
+
+                serde_json::json!({
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": SYSTEM_PROMPT
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "max_tokens": 16384,
+                    "reasoning_budget": 4096
+                })
+            }
         };
 
         // 4. Dispatch request to NVIDIA NIM
