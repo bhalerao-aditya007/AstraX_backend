@@ -1,7 +1,7 @@
 # ===========================================================================
 # Stage 1: Build Stage (Official Rust Debian Slim Image)
 # ===========================================================================
-FROM rust:slim-bookworm AS builder
+FROM rust:1.98.1-slim-bookworm AS builder
 
 WORKDIR /app
 
