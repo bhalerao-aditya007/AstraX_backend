@@ -7,7 +7,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use document::{
+use ::document::{
     document::{image::Image, text::Text, voice::Voice},
     errors::DocumentErrors,
     gradio::GradioClient,
@@ -22,7 +22,7 @@ use document::{
         yolo::YoloProcessor,
     },
 };
-use orm::entity::document;
+use orm::entity::document as doc_entity;
 use sea_orm::EntityTrait;
 use uuid::Uuid;
 
@@ -43,7 +43,7 @@ async fn trigger_fir_ocr_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -72,7 +72,7 @@ async fn trigger_anpr_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -100,7 +100,7 @@ async fn trigger_yolo_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -128,7 +128,7 @@ async fn trigger_asr_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -157,7 +157,7 @@ async fn trigger_ner_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -184,7 +184,7 @@ async fn trigger_ocr_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?
@@ -212,7 +212,7 @@ async fn trigger_financial_handler(
     let db = manager.db();
     let store = manager.storage();
 
-    let doc_model = document::Entity::find_by_id(doc_id)
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
         .one(db)
         .await
         .map_err(DocumentErrors::DatabaseError)?

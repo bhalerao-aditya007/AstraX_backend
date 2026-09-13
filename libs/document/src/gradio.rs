@@ -90,6 +90,7 @@ impl GradioClient {
 
     /// HF Spaces on the free tier sleep after inactivity. This sends a quick
     /// GET to the root to wake the Space and waits briefly for it to spin up.
+    #[allow(dead_code)]
     async fn wake_space(&self) {
         let url = format!("{}/", self.base_url);
         match self.client.get(&url).send().await {
