@@ -33,10 +33,7 @@ impl From<DocumentType> for orm::entity::sea_orm_active_enums::DocumentType {
             DocumentType::Image => orm::entity::sea_orm_active_enums::DocumentType::Image,
             DocumentType::Text => orm::entity::sea_orm_active_enums::DocumentType::Text,
             DocumentType::Voice => orm::entity::sea_orm_active_enums::DocumentType::Voice,
-            // Video variant maps to the ORM Video enum once the migration runs
-            // and `sea-orm-cli generate entity` is re-executed. Until then, we
-            // store it as Image (video frames are image-like for processing).
-            DocumentType::Video => orm::entity::sea_orm_active_enums::DocumentType::Image,
+            DocumentType::Video => orm::entity::sea_orm_active_enums::DocumentType::Video,
         }
     }
 }
@@ -47,6 +44,7 @@ impl From<orm::entity::sea_orm_active_enums::DocumentType> for DocumentType {
             orm::entity::sea_orm_active_enums::DocumentType::Image => DocumentType::Image,
             orm::entity::sea_orm_active_enums::DocumentType::Text => DocumentType::Text,
             orm::entity::sea_orm_active_enums::DocumentType::Voice => DocumentType::Voice,
+            orm::entity::sea_orm_active_enums::DocumentType::Video => DocumentType::Video,
         }
     }
 }

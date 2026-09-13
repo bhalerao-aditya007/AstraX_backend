@@ -12,7 +12,7 @@ use sea_orm::{
 use serde::Deserialize;
 
 use crate::{
-    document::{base::Document, image::Image, text::Text, voice::Voice},
+    document::{base::Document, image::Image, text::Text, video::Video, voice::Voice},
     errors::DocumentErrors,
     processors::base::DocumentProcessor,
     storage::s3_object_store::S3ObjectStore,
@@ -481,6 +481,10 @@ impl DocumentProcessor for NvidiaKimiProcessor {
                 DocumentType::Voice => {
                     let voice_doc = Voice::new(doc_id, model.object_key.clone(), store.clone());
                     self.process(&voice_doc, db).await
+                }
+                DocumentType::Video => {
+                    let video_doc = Video::new(doc_id, model.object_key.clone(), store.clone());
+                    self.process(&video_doc, db).await
                 }
             };
 
