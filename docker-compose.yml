@@ -1,0 +1,90 @@
+services:
+  # -------------------------------------------------------------------------
+  # 1. PostgreSQL Database (Stores cases, documents, entities, links, theories)
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: sih_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: sih2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sih2026"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # 2. MinIO (S3-compatible storage for CCTV videos, FIR scans, audio files)
+  # -------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: sih_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # -------------------------------------------------------------------------
+  # 3. Create MinIO Default Evidence Bucket
+  # -------------------------------------------------------------------------
+  create-bucket:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing local/police-evidence;
+      /usr/bin/mc anonymous set download local/police-evidence;
+      exit 0;
+      "
+
+  # -------------------------------------------------------------------------
+  # 4. Rust Backend Server (Axum API + Multi-Model Cron Workers)
+  # -------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sih_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - DATABASE_URL=postgres://postgres:password123@postgres:5432/sih2026
+      - S3_BUCKET_NAME=police-evidence
+      - S3_REGION=us-east-1
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      # Connects directly to your Hugging Face Space:
+      - HF_SPACE_URL=${HF_SPACE_URL:-https://your-username-your-space.hf.space}
+      - GNN_SERVICE_URL=${GNN_SERVICE_URL:-https://your-username-your-space.hf.space}
+      - POLICE_AI_BASE_URL=${POLICE_AI_BASE_URL:-https://your-username-your-space.hf.space}
+      - ENABLE_DOCUMENT_PROCESSOR_CRON=true
+      - DOCUMENT_CRON_INTERVAL_SECS=30
+      - GNN_AUTO_TRIGGER=true
+
+volumes:
+  postgres_data:
+  minio_data:

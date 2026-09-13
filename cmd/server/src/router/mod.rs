@@ -1,6 +1,8 @@
 pub mod case_router;
 pub mod document_router;
 pub mod gnn_router;
+pub mod analysis_router;
+pub mod model_router;
 
 use std::sync::Arc;
 use axum::{
@@ -78,7 +80,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/health", get(health_check_handler))
         .merge(document_router::create_router(state.clone()))
         .merge(case_router::create_router(state.clone()))
-        .merge(gnn_router::create_router(state))
+        .merge(gnn_router::create_router(state.clone()))
+        .merge(analysis_router::create_router(state.clone()))
+        .merge(model_router::create_router(state))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }

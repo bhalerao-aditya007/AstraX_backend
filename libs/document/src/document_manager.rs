@@ -24,6 +24,7 @@ pub enum DocumentType {
     Image,
     Text,
     Voice,
+    Video,
 }
 
 impl From<DocumentType> for orm::entity::sea_orm_active_enums::DocumentType {
@@ -32,6 +33,10 @@ impl From<DocumentType> for orm::entity::sea_orm_active_enums::DocumentType {
             DocumentType::Image => orm::entity::sea_orm_active_enums::DocumentType::Image,
             DocumentType::Text => orm::entity::sea_orm_active_enums::DocumentType::Text,
             DocumentType::Voice => orm::entity::sea_orm_active_enums::DocumentType::Voice,
+            // Video variant maps to the ORM Video enum once the migration runs
+            // and `sea-orm-cli generate entity` is re-executed. Until then, we
+            // store it as Image (video frames are image-like for processing).
+            DocumentType::Video => orm::entity::sea_orm_active_enums::DocumentType::Image,
         }
     }
 }
@@ -82,6 +87,7 @@ impl From<DocumentModel> for DocumentResponse {
             DocumentType::Image => "image",
             DocumentType::Text => "text",
             DocumentType::Voice => "voice",
+            DocumentType::Video => "video",
         };
         Self {
             id: m.id,

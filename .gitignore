@@ -1,3 +1,2 @@
 target/
 .env
-libs/orm/src/entity/*.rs
