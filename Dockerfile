@@ -3,17 +3,21 @@
 # ===========================================================================
 FROM rust:1.98.1-slim-bookworm AS builder
 
+# Bust any stale Railway builder cache
+ARG CACHEBUST=2026091401
+
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies and verify toolchain
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "=== Active Rust Toolchain ===" && rustc --version
 
 # Copy workspace manifests
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY cmd/server/Cargo.toml cmd/server/Cargo.toml
 COPY libs/document/Cargo.toml libs/document/Cargo.toml
 COPY libs/orm/Cargo.toml libs/orm/Cargo.toml
