@@ -20,6 +20,12 @@ pub struct GradioFileRef {
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(default = "default_gradio_meta")]
+    pub meta: serde_json::Value,
+}
+
+fn default_gradio_meta() -> serde_json::Value {
+    serde_json::json!({ "_type": "gradio.FileData" })
 }
 
 /// Wrapper for `/api/<fn_name>` request bodies.
@@ -179,6 +185,7 @@ impl GradioClient {
             orig_name: Some(filename.to_string()),
             size: Some(file_size),
             mime_type: Some(mime_type.to_string()),
+            meta: default_gradio_meta(),
         })
     }
 
@@ -219,14 +226,23 @@ impl GradioClient {
                     })?;
 
                     let sse_text = stream_res.text().await.unwrap_or_default();
-                    for line in sse_text.lines() {
-                        if line.starts_with("data:") {
-                            let json_str = line.trim_start_matches("data:").trim();
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if let Some(arr) = val.as_array() {
-                                    return Ok(arr.first().cloned().unwrap_or(serde_json::Value::Null));
+                    if sse_text.contains("event: error") {
+                        tracing::warn!(
+                            "[GradioClient] Gradio 6 stream returned error event for '{}'",
+                            fn_name
+                        );
+                    } else {
+                        for line in sse_text.lines() {
+                            if line.starts_with("data:") {
+                                let json_str = line.trim_start_matches("data:").trim();
+                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                    if val.get("error").is_none() {
+                                        if let Some(arr) = val.as_array() {
+                                            return Ok(arr.first().cloned().unwrap_or(serde_json::Value::Null));
+                                        }
+                                        return Ok(val);
+                                    }
                                 }
-                                return Ok(val);
                             }
                         }
                     }
