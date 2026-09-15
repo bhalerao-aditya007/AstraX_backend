@@ -16,4 +16,7 @@ pub enum DocumentErrors {
 
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("Processing error: {0}")]
+    ProcessingError(String),
 }

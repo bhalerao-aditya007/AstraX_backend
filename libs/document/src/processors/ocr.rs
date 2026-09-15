@@ -210,7 +210,8 @@ impl DocumentProcessor for OcrProcessor {
             let image_doc = Image::new(doc_id, model.object_key.clone(), store.clone());
 
             // Execute process
-            if let Err(e) = self.process(&image_doc, db).await {
+            let process_res = self.process(&image_doc, db).await;
+            if let Err(ref e) = process_res {
                 tracing::error!(
                     "[OcrProcessor][PROCESSING_ERROR] Error processing doc_id={}: {}",
                     doc_id,
@@ -218,20 +219,23 @@ impl DocumentProcessor for OcrProcessor {
                 );
             }
 
-            // CRITICAL: Always transition status → Finish (never Failed)
             if let Ok(Some(doc)) = document::Entity::find_by_id(doc_id).one(db).await {
                 let mut active: document::ActiveModel = doc.into();
-                active.status = Set(DocumentStatus::Finish);
+                active.status = Set(if process_res.is_ok() {
+                    DocumentStatus::Finish
+                } else {
+                    DocumentStatus::Failed
+                });
                 active.updated_at = Set(chrono::Utc::now().fixed_offset());
                 if let Err(e) = active.update(db).await {
                     tracing::error!(
-                        "[OcrProcessor][DB_ERROR] Failed to set status=Finish for doc_id={}: {}",
+                        "[OcrProcessor][DB_ERROR] Failed to set status for doc_id={}: {}",
                         doc_id,
                         e
                     );
                 } else {
                     tracing::info!(
-                        "[OcrProcessor][STATUS_TRANSITION] doc_id={} → Finish",
+                        "[OcrProcessor][STATUS_TRANSITION] doc_id={} -> Finish/Failed",
                         doc_id
                     );
                 }

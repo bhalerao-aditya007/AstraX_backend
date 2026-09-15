@@ -41,32 +41,12 @@ impl DocumentProcessor for FirOcrProcessor {
                 if p.get("fir_number").is_some() || p.get("transcribed_text").is_some() {
                     p
                 } else {
-                    serde_json::json!({
-                        "fir_number": "104/2026",
-                        "police_station": "Kashmere Gate",
-                        "district": "North Delhi",
-                        "acts_and_sections": [{"act": "BNS", "section": "303(2)"}, {"act": "BNS", "section": "61(2)"}],
-                        "complainant": {"name": "Ramesh Kumar", "phone": "9810123456"},
-                        "accused": [{"name": "Irfan @ Chhotu", "alias": "Chhotu", "phone": "9871987654"}],
-                        "incident_datetime": "2026-03-12T14:00:00Z",
-                        "narrative": "Accused was seen tampering vehicle ignition lock near Red Fort parking lot.",
-                        "transcribed_text": "FIR No 104/2026. Police Station Kashmere Gate. Sections BNS 303(2), 61(2). Suspect Irfan @ Chhotu, Phone 9871987654."
-                    })
+                    return Err(DocumentErrors::ProcessingError("FIR OCR model returned empty results".to_string()));
                 }
             }
             Err(e) => {
-                tracing::warn!("[FirOcrProcessor] Inference call error: {}. Using baseline extraction.", e);
-                serde_json::json!({
-                    "fir_number": "104/2026",
-                    "police_station": "Kashmere Gate",
-                    "district": "North Delhi",
-                    "acts_and_sections": [{"act": "BNS", "section": "303(2)"}, {"act": "BNS", "section": "61(2)"}],
-                    "complainant": {"name": "Ramesh Kumar", "phone": "9810123456"},
-                    "accused": [{"name": "Irfan @ Chhotu", "alias": "Chhotu", "phone": "9871987654"}],
-                    "incident_datetime": "2026-03-12T14:00:00Z",
-                    "narrative": "Accused was seen tampering vehicle ignition lock near Red Fort parking lot.",
-                    "transcribed_text": "FIR No 104/2026. Police Station Kashmere Gate. Sections BNS 303(2), 61(2). Suspect Irfan @ Chhotu, Phone 9871987654."
-                })
+                tracing::error!("[FirOcrProcessor] Inference call error: {}", e);
+                return Err(DocumentErrors::ProcessingError(format!("FIR OCR inference error: {}", e)));
             }
         };
 
@@ -134,18 +114,23 @@ impl DocumentProcessor for FirOcrProcessor {
             }
 
             let image_doc = Image::new(doc_id, model.object_key.clone(), store.clone());
-            if let Err(e) = self.process(&image_doc, db).await {
+            let process_res = self.process(&image_doc, db).await;
+            if let Err(ref e) = process_res {
                 tracing::error!("[FirOcrProcessor][PROCESSING_ERROR] Error for doc_id={}: {}", doc_id, e);
             }
 
             if let Ok(Some(d)) = document::Entity::find_by_id(doc_id).one(db).await {
                 let mut active: document::ActiveModel = d.into();
-                active.status = Set(DocumentStatus::Finish);
+                active.status = Set(if process_res.is_ok() {
+                    DocumentStatus::Finish
+                } else {
+                    DocumentStatus::Failed
+                });
                 active.updated_at = Set(chrono::Utc::now().fixed_offset());
                 if let Err(e) = active.update(db).await {
-                    tracing::error!("[FirOcrProcessor][DB_ERROR] Failed to set status=Finish for doc_id={}: {}", doc_id, e);
+                    tracing::error!("[FirOcrProcessor][DB_ERROR] Failed to set status for doc_id={}: {}", doc_id, e);
                 } else {
-                    tracing::info!("[FirOcrProcessor][STATUS_TRANSITION] doc_id={} -> Finish", doc_id);
+                    tracing::info!("[FirOcrProcessor][STATUS_TRANSITION] doc_id={} -> Finish/Failed", doc_id);
                 }
             }
         }

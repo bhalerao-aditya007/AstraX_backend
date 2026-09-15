@@ -187,7 +187,7 @@ async fn get_case_graph_handler(
                         label: format_label(&pred.target_entity_id),
                         r#type: pred.target_entity_type.clone(),
                         badge: Some("Associated Suspect".to_string()),
-                        risk_score: Some(0.75),
+                        risk_score: None,
                         attributes: serde_json::Map::new(),
                     },
                 );
@@ -317,7 +317,7 @@ async fn get_global_graph_handler(
                     label: format_label(&pred.target_entity_id),
                     r#type: pred.target_entity_type.clone(),
                     badge: Some("Suspect".to_string()),
-                    risk_score: Some(0.75),
+                    risk_score: None,
                     attributes: serde_json::Map::new(),
                 },
             );
@@ -439,7 +439,7 @@ fn extract_evidentiary_elements(
                         label: s_clean.to_string(),
                         r#type: "person".to_string(),
                         badge: Some("Person of Interest".to_string()),
-                        risk_score: Some(0.60),
+                        risk_score: None,
                         attributes: serde_json::Map::new(),
                     });
                     doc_nodes.push(id);
@@ -481,39 +481,77 @@ fn extract_evidentiary_elements(
         }
     }
 
-    // Connect evidentiary edges between entities in the same document
+    // Connect evidentiary edges: only link attributes to owner or use explicit extracted relationships
+    // Avoid blanket cross-product wiring of every person to every other person in the same document.
+    let mut explicit_links_found = false;
+    if let serde_json::Value::Object(map) = info {
+        if let Some(relationships) = map.get("relationships").and_then(|r| r.as_array()) {
+            for rel in relationships {
+                if let (Some(s), Some(t), Some(r)) = (
+                    rel.get("source").and_then(|v| v.as_str()),
+                    rel.get("target").and_then(|v| v.as_str()),
+                    rel.get("relationship").and_then(|v| v.as_str()),
+                ) {
+                    let s_id = format!("ENT-PERSON-{}", s.trim().to_uppercase().replace(' ', "_"));
+                    let t_id = format!("ENT-PERSON-{}", t.trim().to_uppercase().replace(' ', "_"));
+                    if nodes_map.contains_key(&s_id) && nodes_map.contains_key(&t_id) {
+                        edges.push(CytoscapeEdge {
+                            data: EdgeData {
+                                id: format!("edge-evid-{}", *edge_counter),
+                                source: s_id,
+                                target: t_id,
+                                label: r.to_string(),
+                                category: "evidentiary".to_string(),
+                                is_hypothesis: false,
+                                style: "solid".to_string(),
+                                color: "#64748b".to_string(),
+                                probability: None,
+                                recommendation: None,
+                                source_document: Some(doc_title.to_string()),
+                            },
+                        });
+                        *edge_counter += 1;
+                        explicit_links_found = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Connect Person -> owned Phone, Account, Object within the document
     for i in 0..doc_nodes.len() {
         for j in (i + 1)..doc_nodes.len() {
             let src = &doc_nodes[i];
             let dst = &doc_nodes[j];
-            let label = if src.contains("PERSON") && dst.contains("PHONE") {
-                "owns"
-            } else if src.contains("PERSON") && dst.contains("ACC") {
-                "owns"
-            } else if src.contains("PERSON") && dst.contains("OBJ") {
-                "linked_to"
-            } else if src.contains("PERSON") && dst.contains("PERSON") {
-                "associated_with"
-            } else {
-                "related_to"
-            };
+            let is_person_attr = (src.contains("PERSON") && (dst.contains("PHONE") || dst.contains("ACC") || dst.contains("OBJ")))
+                || (dst.contains("PERSON") && (src.contains("PHONE") || src.contains("ACC") || src.contains("OBJ")));
+            
+            if is_person_attr {
+                let (source, target, label) = if src.contains("PERSON") {
+                    let lbl = if dst.contains("PHONE") || dst.contains("ACC") { "owns" } else { "linked_to" };
+                    (src.clone(), dst.clone(), lbl)
+                } else {
+                    let lbl = if src.contains("PHONE") || src.contains("ACC") { "owns" } else { "linked_to" };
+                    (dst.clone(), src.clone(), lbl)
+                };
 
-            edges.push(CytoscapeEdge {
-                data: EdgeData {
-                    id: format!("edge-evid-{}", *edge_counter),
-                    source: src.clone(),
-                    target: dst.clone(),
-                    label: label.to_string(),
-                    category: "evidentiary".to_string(),
-                    is_hypothesis: false,
-                    style: "solid".to_string(),
-                    color: "#64748b".to_string(),
-                    probability: None,
-                    recommendation: None,
-                    source_document: Some(doc_title.to_string()),
-                },
-            });
-            *edge_counter += 1;
+                edges.push(CytoscapeEdge {
+                    data: EdgeData {
+                        id: format!("edge-evid-{}", *edge_counter),
+                        source,
+                        target,
+                        label: label.to_string(),
+                        category: "evidentiary".to_string(),
+                        is_hypothesis: false,
+                        style: "solid".to_string(),
+                        color: "#64748b".to_string(),
+                        probability: None,
+                        recommendation: None,
+                        source_document: Some(doc_title.to_string()),
+                    },
+                });
+                *edge_counter += 1;
+            }
         }
     }
 }

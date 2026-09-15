@@ -41,20 +41,12 @@ impl DocumentProcessor for AsrProcessor {
                 if p.get("transcribed_text").is_some() || p.get("transcript").is_some() {
                     p
                 } else {
-                    serde_json::json!({
-                        "transcript": "Caller reported suspect fleeing on black motorcycle towards GT Karnal Road.",
-                        "language": "hi-en",
-                        "transcribed_text": "Caller reported suspect fleeing on black motorcycle towards GT Karnal Road."
-                    })
+                    return Err(DocumentErrors::ProcessingError("ASR model returned empty results".to_string()));
                 }
             }
             Err(e) => {
-                tracing::warn!("[AsrProcessor] Inference call error: {}. Using baseline transcript.", e);
-                serde_json::json!({
-                    "transcript": "Caller reported suspect fleeing on black motorcycle towards GT Karnal Road.",
-                    "language": "hi-en",
-                    "transcribed_text": "Caller reported suspect fleeing on black motorcycle towards GT Karnal Road."
-                })
+                tracing::error!("[AsrProcessor] Inference call error: {}", e);
+                return Err(DocumentErrors::ProcessingError(format!("ASR inference error: {}", e)));
             }
         };
 
@@ -115,18 +107,23 @@ impl DocumentProcessor for AsrProcessor {
             }
 
             let voice_doc = Voice::new(doc_id, model.object_key.clone(), store.clone());
-            if let Err(e) = self.process(&voice_doc, db).await {
+            let process_res = self.process(&voice_doc, db).await;
+            if let Err(ref e) = process_res {
                 tracing::error!("[AsrProcessor][PROCESSING_ERROR] Error for doc_id={}: {}", doc_id, e);
             }
 
             if let Ok(Some(d)) = document::Entity::find_by_id(doc_id).one(db).await {
                 let mut active: document::ActiveModel = d.into();
-                active.status = Set(DocumentStatus::Finish);
+                active.status = Set(if process_res.is_ok() {
+                    DocumentStatus::Finish
+                } else {
+                    DocumentStatus::Failed
+                });
                 active.updated_at = Set(chrono::Utc::now().fixed_offset());
                 if let Err(e) = active.update(db).await {
-                    tracing::error!("[AsrProcessor][DB_ERROR] Failed to set status=Finish for doc_id={}: {}", doc_id, e);
+                    tracing::error!("[AsrProcessor][DB_ERROR] Failed to set status for doc_id={}: {}", doc_id, e);
                 } else {
-                    tracing::info!("[AsrProcessor][STATUS_TRANSITION] doc_id={} -> Finish", doc_id);
+                    tracing::info!("[AsrProcessor][STATUS_TRANSITION] doc_id={} -> Finish/Failed", doc_id);
                 }
             }
         }

@@ -40,28 +40,12 @@ impl DocumentProcessor for YoloProcessor {
                 if p.get("detections").is_some() {
                     p
                 } else {
-                    serde_json::json!({
-                        "status": "success",
-                        "is_video": false,
-                        "detections": [
-                            {"class": "person", "confidence": 0.942, "bbox": [120.0, 80.0, 240.0, 360.0]},
-                            {"class": "motorcycle", "confidence": 0.887, "bbox": [200.0, 220.0, 410.0, 480.0]}
-                        ],
-                        "transcribed_text": "Detected 2 objects: person, motorcycle"
-                    })
+                    return Err(DocumentErrors::ProcessingError("YOLO model returned empty results".to_string()));
                 }
             }
             Err(e) => {
-                tracing::warn!("[YoloProcessor] Inference call error: {}. Using baseline detections.", e);
-                serde_json::json!({
-                    "status": "success",
-                    "is_video": false,
-                    "detections": [
-                        {"class": "person", "confidence": 0.942, "bbox": [120.0, 80.0, 240.0, 360.0]},
-                        {"class": "motorcycle", "confidence": 0.887, "bbox": [200.0, 220.0, 410.0, 480.0]}
-                    ],
-                    "transcribed_text": "Detected 2 objects: person, motorcycle"
-                })
+                tracing::error!("[YoloProcessor] Inference call error: {}", e);
+                return Err(DocumentErrors::ProcessingError(format!("YOLO inference error: {}", e)));
             }
         };
 
@@ -124,18 +108,22 @@ impl DocumentProcessor for YoloProcessor {
                 }
             };
 
-            if let Err(e) = result {
+            if let Err(ref e) = result {
                 tracing::error!("[YoloProcessor][PROCESSING_ERROR] Error for doc_id={}: {}", doc_id, e);
             }
 
             if let Ok(Some(d)) = document::Entity::find_by_id(doc_id).one(db).await {
                 let mut active: document::ActiveModel = d.into();
-                active.status = Set(DocumentStatus::Finish);
+                active.status = Set(if result.is_ok() {
+                    DocumentStatus::Finish
+                } else {
+                    DocumentStatus::Failed
+                });
                 active.updated_at = Set(chrono::Utc::now().fixed_offset());
                 if let Err(e) = active.update(db).await {
-                    tracing::error!("[YoloProcessor][DB_ERROR] Failed to set status=Finish for doc_id={}: {}", doc_id, e);
+                    tracing::error!("[YoloProcessor][DB_ERROR] Failed to set status for doc_id={}: {}", doc_id, e);
                 } else {
-                    tracing::info!("[YoloProcessor][STATUS_TRANSITION] doc_id={} -> Finish", doc_id);
+                    tracing::info!("[YoloProcessor][STATUS_TRANSITION] doc_id={} -> Finish/Failed", doc_id);
                 }
             }
         }

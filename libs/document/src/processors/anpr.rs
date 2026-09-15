@@ -34,36 +34,20 @@ impl DocumentProcessor for AnprProcessor {
                 if p.get("plate_number").is_some() || p.get("plate_text").is_some() {
                     p
                 } else {
-                    serde_json::json!({
-                        "plate_number": "DL01AB1234",
-                        "confidence": 0.982,
-                        "rto_prefix": "DL01",
-                        "state": "Delhi",
-                        "rto_office": "Mall Road Regional Transport Office, Delhi North",
-                        "transcribed_text": "DL01AB1234"
-                    })
+                    return Err(DocumentErrors::ProcessingError("ANPR model returned empty results".to_string()));
                 }
             }
             Err(e) => {
-                tracing::warn!("[AnprProcessor] Inference call error: {}. Using calibrated baseline.", e);
-                serde_json::json!({
-                    "plate_number": "DL01AB1234",
-                    "confidence": 0.982,
-                    "rto_prefix": "DL01",
-                    "state": "Delhi",
-                    "rto_office": "Mall Road Regional Transport Office, Delhi North",
-                    "transcribed_text": "DL01AB1234"
-                })
+                tracing::error!("[AnprProcessor] Inference call error: {}", e);
+                return Err(DocumentErrors::ProcessingError(format!("ANPR inference error: {}", e)));
             }
         };
 
         if let Some(map) = parsed.as_object_mut() {
             if !map.contains_key("transcribed_text") {
-                let plate = map.get("plate_number")
-                    .or_else(|| map.get("plate_text"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("DL01AB1234");
-                map.insert("transcribed_text".to_string(), serde_json::Value::String(plate.to_string()));
+                if let Some(plate) = map.get("plate_number").or_else(|| map.get("plate_text")).and_then(|v| v.as_str()) {
+                    map.insert("transcribed_text".to_string(), serde_json::Value::String(plate.to_string()));
+                }
             }
         }
 

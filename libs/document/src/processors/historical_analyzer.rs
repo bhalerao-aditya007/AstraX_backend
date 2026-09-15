@@ -134,11 +134,27 @@ impl HistoricalAnalyzer {
         let mut priority_leads = Vec::new();
         let max_connections = std::cmp::max(1, person_ids.len()) as f64;
         
+        let case_docs_len = std::cmp::max(1, case_docs.len()) as f64;
+        
         for pid in &person_ids {
             let p_gnn = gnn_probs.get(pid).copied().unwrap_or(0.0);
             let centrality = 1.0 / max_connections;
-            let m_mo = 0.0;
-            let e_direct = 0.5;
+            
+            let m_mo = if let Some(matches) = mo_matches.get("matched_patterns").or_else(|| mo_matches.get("matches")).and_then(|v| v.as_array()) {
+                matches.iter().filter_map(|m| m.get("similarity").or_else(|| m.get("score")).and_then(|s| s.as_f64())).next().unwrap_or(0.0)
+            } else {
+                mo_matches.get("similarity").or_else(|| mo_matches.get("score")).and_then(|s| s.as_f64()).unwrap_or(0.0)
+            };
+
+            let direct_occurrences = case_docs.iter().filter(|d| {
+                if let Some(info) = &d.extracted_information {
+                    let info_str = info.to_string();
+                    info_str.contains(pid)
+                } else {
+                    false
+                }
+            }).count() as f64;
+            let e_direct = (direct_occurrences / case_docs_len).min(1.0);
             let h_recidivism = 0.0;
             
             let score = 0.35 * p_gnn + 0.20 * centrality + 0.15 * m_mo + 0.20 * e_direct + 0.10 * h_recidivism;

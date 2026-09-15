@@ -22,7 +22,24 @@ use crate::{
 // Specialized Forensic Prompts
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = "whatever you can extract in json give like that";
+const SYSTEM_PROMPT: &str = r#"You are an expert law enforcement forensic intelligence extraction system.
+Extract structured entities and relationships from the input document strictly adhering to valid JSON schema:
+{
+  "fir_number": string or null,
+  "police_station": string or null,
+  "district": string or null,
+  "complainant": { "name": string, "phone": string or null } or null,
+  "accused": [ { "name": string, "alias": string or null, "phone": string or null } ],
+  "witnesses": [ { "name": string, "statement": string or null } ],
+  "acts_and_sections": [ { "act": string, "section": string } ],
+  "incident_datetime": string or null,
+  "narrative": string or null,
+  "vehicles": [ { "plate_number": string, "make_model": string or null } ],
+  "financial_accounts": [ { "account_number": string, "bank": string or null, "amount": string or null } ],
+  "relationships": [ { "source": string, "target": string, "relationship": string } ],
+  "transcribed_text": string
+}
+Do not wrap response in markdown codeblock backticks. Output strictly valid JSON."#;
 
 // ---------------------------------------------------------------------------
 // Response Deserialization Types

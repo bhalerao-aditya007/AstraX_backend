@@ -104,20 +104,45 @@ impl GnnProcessor {
         }
     }
 
-    /// Helper to deterministically encode a string into N float features.
+    /// Encode entity text attributes and character n-gram distribution into fixed-dim feature vector.
     fn hash_to_features(text: &str, dim: usize) -> Vec<f64> {
         let mut feats = Vec::with_capacity(dim);
-        let bytes = text.as_bytes();
-        for i in 0..dim {
-            let mut h: u64 = 0x811c9dc5 ^ (i as u64);
-            for &b in bytes {
-                h ^= b as u64;
-                h = h.wrapping_mul(0x01000193);
-            }
-            // Normalize float to [-1.0, 1.0]
-            let val = ((h % 20000) as f64 / 10000.0) - 1.0;
-            feats.push(val);
+        let len = text.len() as f64;
+        let token_count = text.split_whitespace().count() as f64;
+        let has_digits = if text.chars().any(|c| c.is_ascii_digit()) { 1.0 } else { 0.0 };
+        let has_alias = if text.contains('@') || text.to_uppercase().contains("ALIAS") { 1.0 } else { 0.0 };
+
+        // Dimension 0: Normalized length
+        if dim > 0 {
+            feats.push((len / 100.0).min(1.0));
         }
+        // Dimension 1: Normalized token count
+        if dim > 1 {
+            feats.push((token_count / 10.0).min(1.0));
+        }
+        // Dimension 2: Numeric indicator
+        if dim > 2 {
+            feats.push(has_digits);
+        }
+        // Dimension 3: Alias marker indicator
+        if dim > 3 {
+            feats.push(has_alias);
+        }
+
+        // Remaining dimensions: Normalized character bucket frequency distribution
+        let remaining = dim.saturating_sub(feats.len());
+        if remaining > 0 {
+            let mut char_counts = vec![0.0f64; remaining];
+            for b in text.bytes() {
+                let idx = (b as usize) % remaining;
+                char_counts[idx] += 1.0;
+            }
+            let total = len.max(1.0);
+            for count in char_counts {
+                feats.push((count / total).min(1.0));
+            }
+        }
+
         feats
     }
 
