@@ -483,7 +483,7 @@ fn extract_evidentiary_elements(
 
     // Connect evidentiary edges: only link attributes to owner or use explicit extracted relationships
     // Avoid blanket cross-product wiring of every person to every other person in the same document.
-    let mut explicit_links_found = false;
+    // explicit_links_found checked via edges
     if let serde_json::Value::Object(map) = info {
         if let Some(relationships) = map.get("relationships").and_then(|r| r.as_array()) {
             for rel in relationships {
@@ -511,7 +511,7 @@ fn extract_evidentiary_elements(
                             },
                         });
                         *edge_counter += 1;
-                        explicit_links_found = true;
+                        // explicit link created
                     }
                 }
             }

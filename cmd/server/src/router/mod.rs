@@ -50,6 +50,9 @@ impl IntoResponse for AppError {
             document::errors::DocumentErrors::DatabaseError(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
+            document::errors::DocumentErrors::ProcessingError(msg) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, msg.clone())
+            }
         };
 
         tracing::error!("Request error: {}", message);
