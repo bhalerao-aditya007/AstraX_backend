@@ -18,7 +18,6 @@ use ::document::{
         financial::FinancialProcessor,
         fir_ocr::FirOcrProcessor,
         ner::NerProcessor,
-        ocr::OcrProcessor,
         yolo::YoloProcessor,
     },
 };
@@ -50,7 +49,7 @@ async fn trigger_fir_ocr_handler(
         .ok_or_else(|| DocumentErrors::NotFound(format!("Document {} not found", doc_id)))?;
 
     let gradio = Arc::new(GradioClient::from_env());
-    let ner = Arc::new(NerProcessor::with_default_url());
+    let ner = Arc::new(NerProcessor::from_env());
     let processor = FirOcrProcessor::new(gradio, ner);
 
     let image_doc = Image::new(doc_id, doc_model.object_key.clone(), store.clone());
@@ -60,6 +59,39 @@ async fn trigger_fir_ocr_handler(
         StatusCode::OK,
         Json(MessageResponse {
             message: format!("FIR OCR completed for document {}", doc_id),
+        }),
+    ))
+}
+
+/// POST /api/models/ocr/{doc_id}
+///
+/// Handwritten / scanned document OCR. Repointed to the real `fir_ocr`
+/// Gradio model (Qwen2-VL) — the standalone `/api/ocr` REST endpoint this
+/// used to call was never implemented on the HF Space.
+async fn trigger_ocr_handler(
+    State(manager): State<AppState>,
+    Path(doc_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let db = manager.db();
+    let store = manager.storage();
+
+    let doc_model = doc_entity::Entity::find_by_id(doc_id)
+        .one(db)
+        .await
+        .map_err(DocumentErrors::DatabaseError)?
+        .ok_or_else(|| DocumentErrors::NotFound(format!("Document {} not found", doc_id)))?;
+
+    let gradio = Arc::new(GradioClient::from_env());
+    let ner = Arc::new(NerProcessor::from_env());
+    let processor = FirOcrProcessor::new(gradio, ner);
+
+    let image_doc = Image::new(doc_id, doc_model.object_key.clone(), store.clone());
+    processor.process(&image_doc, db).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: format!("OCR completed for document {}", doc_id),
         }),
     ))
 }
@@ -135,7 +167,7 @@ async fn trigger_asr_handler(
         .ok_or_else(|| DocumentErrors::NotFound(format!("Document {} not found", doc_id)))?;
 
     let gradio = Arc::new(GradioClient::from_env());
-    let ner = Arc::new(NerProcessor::with_default_url());
+    let ner = Arc::new(NerProcessor::from_env());
     let processor = AsrProcessor::new(gradio, ner);
 
     let voice_doc = Voice::new(doc_id, doc_model.object_key.clone(), store.clone());
@@ -163,7 +195,7 @@ async fn trigger_ner_handler(
         .map_err(DocumentErrors::DatabaseError)?
         .ok_or_else(|| DocumentErrors::NotFound(format!("Document {} not found", doc_id)))?;
 
-    let processor = NerProcessor::with_default_url();
+    let processor = NerProcessor::from_env();
 
     let text_doc = Text::new(doc_id, doc_model.object_key.clone(), store.clone());
     processor.process(&text_doc, db).await?;
@@ -172,34 +204,6 @@ async fn trigger_ner_handler(
         StatusCode::OK,
         Json(MessageResponse {
             message: format!("NER extraction completed for document {}", doc_id),
-        }),
-    ))
-}
-
-/// POST /api/models/ocr/{doc_id}
-async fn trigger_ocr_handler(
-    State(manager): State<AppState>,
-    Path(doc_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let db = manager.db();
-    let store = manager.storage();
-
-    let doc_model = doc_entity::Entity::find_by_id(doc_id)
-        .one(db)
-        .await
-        .map_err(DocumentErrors::DatabaseError)?
-        .ok_or_else(|| DocumentErrors::NotFound(format!("Document {} not found", doc_id)))?;
-
-    let ner = Arc::new(NerProcessor::with_default_url());
-    let processor = OcrProcessor::with_default_url(ner);
-
-    let image_doc = Image::new(doc_id, doc_model.object_key.clone(), store.clone());
-    processor.process(&image_doc, db).await?;
-
-    Ok((
-        StatusCode::OK,
-        Json(MessageResponse {
-            message: format!("Handwritten OCR completed for document {}", doc_id),
         }),
     ))
 }
