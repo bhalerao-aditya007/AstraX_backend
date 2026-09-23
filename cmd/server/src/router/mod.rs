@@ -3,6 +3,7 @@ pub mod document_router;
 pub mod gnn_router;
 pub mod analysis_router;
 pub mod model_router;
+pub mod osint_router;
 
 use std::sync::Arc;
 use axum::{
@@ -85,7 +86,8 @@ pub fn create_router(state: AppState) -> Router {
         .merge(case_router::create_router(state.clone()))
         .merge(gnn_router::create_router(state.clone()))
         .merge(analysis_router::create_router(state.clone()))
-        .merge(model_router::create_router(state))
+        .merge(model_router::create_router(state.clone()))
+        .merge(osint_router::create_router(state))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }

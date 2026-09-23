@@ -657,5 +657,69 @@ async def predict_conspiracy(request: Request):
         "predicted_conspirators": predictions
     })
 
+# ── OSINT Source Adapter API ─────────────────────────────────────────────
+import osint_tools
+from fastapi import UploadFile, File
+
+@demo.app.post("/api/v1/osint/scan")
+async def osint_scan(request: Request):
+    """Selector-driven OSINT enrichment: phone/domain/username."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "invalid JSON body"})
+
+    stype = body.get("selector_type", "")
+    value = body.get("selector_value", "")
+
+    dispatch = {
+        "phone":    lambda v: osint_tools.run_phone(v),
+        "domain":   lambda v: osint_tools.run_dnstwist(v),
+        "username": lambda v: osint_tools.run_sherlock(v),
+    }
+
+    if stype not in dispatch:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"unsupported selector_type: {stype!r}. Use phone/domain/username."},
+        )
+
+    try:
+        findings = dispatch[stype](value)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception as e:
+        return JSONResponse(content={
+            "selector_type": stype, "selector_value": value,
+            "findings": [], "error": str(e),
+        })
+
+    return JSONResponse(content={
+        "selector_type": stype, "selector_value": value,
+        "findings": findings,
+    })
+
+
+@demo.app.post("/api/v1/osint/exif")
+async def osint_exif(file: UploadFile = File(...)):
+    """Upload a media file and extract EXIF metadata (GPS, device, timestamps)."""
+    import tempfile as _tf, os as _os
+
+    suffix = _os.path.splitext(file.filename or "")[1] or ".jpg"
+    with _tf.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        path = tmp.name
+
+    try:
+        findings = osint_tools.run_exiftool(path)
+        return JSONResponse(content={"findings": findings})
+    finally:
+        try:
+            _os.unlink(path)
+        except OSError:
+            pass
+
+
 if __name__ == "__main__":
     demo.queue().launch()

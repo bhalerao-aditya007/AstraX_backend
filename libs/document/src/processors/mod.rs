@@ -17,3 +17,4 @@ pub mod entity_resolver;
 pub mod summarizer;
 pub mod theory;
 pub mod historical_analyzer;
+pub mod osint;
