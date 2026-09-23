@@ -68,6 +68,7 @@ async fn trigger_fir_ocr_handler(
 /// Handwritten / scanned document OCR. Repointed to the real `fir_ocr`
 /// Gradio model (Qwen2-VL) — the standalone `/api/ocr` REST endpoint this
 /// used to call was never implemented on the HF Space.
+
 async fn trigger_ocr_handler(
     State(manager): State<AppState>,
     Path(doc_id): Path<Uuid>,
@@ -83,7 +84,7 @@ async fn trigger_ocr_handler(
 
     let gradio = Arc::new(GradioClient::from_env());
     let ner = Arc::new(NerProcessor::from_env());
-    let processor = FirOcrProcessor::new(gradio, ner);
+    let processor = OcrProcessor::new(gradio, ner);
 
     let image_doc = Image::new(doc_id, doc_model.object_key.clone(), store.clone());
     processor.process(&image_doc, db).await?;
@@ -91,11 +92,10 @@ async fn trigger_ocr_handler(
     Ok((
         StatusCode::OK,
         Json(MessageResponse {
-            message: format!("OCR completed for document {}", doc_id),
+            message: format!("Handwritten OCR completed for document {}", doc_id),
         }),
     ))
 }
-
 /// POST /api/models/anpr/{doc_id}
 async fn trigger_anpr_handler(
     State(manager): State<AppState>,
