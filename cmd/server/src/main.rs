@@ -86,7 +86,7 @@ async fn main() {
         );
 
         // Shared NER processor (used by FIR OCR and ASR as downstream chain)
-        let ner_processor = Arc::new(NerProcessor::with_default_url());
+        let ner_processor = Arc::new(NerProcessor::from_env());
 
         // -------------------------------------------------------------------
         // Cron 1: NVIDIA NIM Universal Processor (Images, Text, Voice)
