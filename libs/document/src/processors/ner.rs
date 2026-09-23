@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use async_trait::async_trait;
 use orm::entity::{
     document,
@@ -10,31 +11,20 @@ use sea_orm::{
 use crate::{
     document::{base::Document, text::Text},
     errors::DocumentErrors,
+    gradio::GradioClient,
     processors::base::DocumentProcessor,
     storage::s3_object_store::S3ObjectStore,
 };
-
-/// Processor for text documents using the MuRIL Named Entity Recognition API.
-///
-/// Calls POST /api/ner with `{"text": "<string>"}` and writes the resulting entities
-/// to `doc.update_extracted_information()`.
 pub struct NerProcessor {
-    base_url: String,
-    client: reqwest::Client,
+    client: Arc<GradioClient>,
 }
 
 impl NerProcessor {
-    pub fn new(base_url: String) -> Self {
-        Self {
-            base_url,
-            client: reqwest::Client::new(),
-        }
+    pub fn new(client: Arc<GradioClient>) -> Self {
+        Self { client }
     }
-
-    pub fn with_default_url() -> Self {
-        let base_url = std::env::var("POLICE_AI_BASE_URL")
-            .unwrap_or_else(|_| "https://atharv1909--police-ai-engine-fastapi-app.modal.run".to_string());
-        Self::new(base_url)
+    pub fn from_env() -> Self {
+        Self::new(Arc::new(GradioClient::from_env()))
     }
 }
 
@@ -68,58 +58,23 @@ impl DocumentProcessor for NerProcessor {
             return Ok(());
         }
 
-        // 3. Prepare payload according to schema: {"text": "<string>"}
-        let payload = serde_json::json!({
-            "text": text
-        });
-
-        let url = format!("{}/api/ner", self.base_url.trim_end_matches('/'));
+        // 3. Call the Gradio `ner` endpoint on the AstraX HF Space
+        let payload = serde_json::json!({ "text": text });
         tracing::info!(
-            "[NerProcessor][MODAL_API] Dispatching POST to {} for doc_id={}",
-            url,
+            "[NerProcessor][GRADIO] Dispatching 'ner' prediction for doc_id={}",
             doc_id
         );
 
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "[NerProcessor][MODAL_API_ERROR] Network request failed for doc_id={}: {}",
-                    doc_id,
-                    e
-                );
-                DocumentErrors::StorageError(format!("Network request to /api/ner failed: {}", e))
-            })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let result = self.client.predict_json("ner", payload).await.map_err(|e| {
             tracing::error!(
-                "[NerProcessor][MODAL_API_ERROR] /api/ner returned non-success status={} for doc_id={}: {}",
-                status,
-                doc_id,
-                body
-            );
-            return Err(DocumentErrors::StorageError(format!(
-                "/api/ner returned HTTP {}: {}",
-                status, body
-            )));
-        }
-
-        // 4. Parse JSON response
-        let mut extracted_json: serde_json::Value = response.json().await.map_err(|e| {
-            tracing::error!(
-                "[NerProcessor][JSON_PARSE_ERROR] Failed to parse JSON response for doc_id={}: {}",
+                "[NerProcessor][GRADIO_ERROR] 'ner' call failed for doc_id={}: {}",
                 doc_id,
                 e
             );
-            DocumentErrors::StorageError(format!("Failed to parse /api/ner response: {}", e))
+            e
         })?;
+
+        let mut extracted_json = GradioClient::parse_result(result);
 
         // Ensure transcribed_text is present in the object
         if let Some(map) = extracted_json.as_object_mut() {
@@ -128,7 +83,7 @@ impl DocumentProcessor for NerProcessor {
             }
         }
 
-        // 5. Update extracted information in DB
+        // 4. Update extracted information in DB
         doc.update_extracted_information(extracted_json, db)
             .await
             .map_err(|e| {
@@ -180,7 +135,6 @@ impl DocumentProcessor for NerProcessor {
         for model in documents {
             let doc_id = model.id;
 
-            // Transition status → Processing
             let mut active: document::ActiveModel = model.clone().into();
             active.status = Set(DocumentStatus::Processing);
             active.updated_at = Set(chrono::Utc::now().fixed_offset());
@@ -192,14 +146,10 @@ impl DocumentProcessor for NerProcessor {
                 );
                 continue;
             }
-            tracing::info!(
-                "[NerProcessor][STATUS_TRANSITION] doc_id={} → Processing",
-                doc_id
-            );
+            tracing::info!("[NerProcessor][STATUS_TRANSITION] doc_id={} → Processing", doc_id);
 
             let text_doc = Text::new(doc_id, model.object_key.clone(), store.clone());
 
-            // Execute process
             let process_res = self.process(&text_doc, db).await;
             if let Err(ref e) = process_res {
                 tracing::error!(
