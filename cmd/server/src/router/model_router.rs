@@ -18,6 +18,7 @@ use ::document::{
         financial::FinancialProcessor,
         fir_ocr::FirOcrProcessor,
         ner::NerProcessor,
+        ocr::OcrProcessor,
         yolo::YoloProcessor,
     },
 };
