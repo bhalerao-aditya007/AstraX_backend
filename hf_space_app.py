@@ -127,6 +127,22 @@ if os.path.exists(gnn_path):
     except Exception as e:
         print(f"Error loading GNN checkpoint: {e}")
 
+# --- F. Handwritten OCR (Local TrOCR) ---
+trocr_processor = None
+trocr_model = None
+trocr_path = "weights/handwritten"
+if os.path.exists(os.path.join(trocr_path, "model.safetensors")):
+    try:
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        trocr_processor = TrOCRProcessor.from_pretrained(trocr_path)
+        trocr_model = VisionEncoderDecoderModel.from_pretrained(
+            trocr_path, torch_dtype=torch.float16
+        )
+        trocr_model.eval()
+        print("Loaded TrOCR handwritten OCR model from weights/handwritten/ ✅")
+    except Exception as e:
+        print(f"Error loading TrOCR handwritten model: {e}")
+
 print("=" * 60)
 print("Model initialization complete.")
 print("=" * 60)
@@ -198,6 +214,46 @@ def fir_ocr(image_path):
             "transcribed_text": "FIR No 104/2026. Police Station Kashmere Gate. Sections BNS 303(2), 61(2). Suspect Irfan @ Chhotu, Phone 9871987654."
         }
 
+@spaces.GPU
+def ocr_handwritten(image_path):
+    """Handwritten case-diary / FIR page transcription using the local
+    TrOCR model (ViT encoder + autoregressive text decoder)."""
+    try:
+        image_path = _extract_path(image_path)
+        if not image_path or not os.path.exists(image_path):
+            return {
+                "transcribed_text": "",
+                "confidence": 0.0,
+                "error": "No handwritten image uploaded or invalid path",
+            }
+
+        if trocr_model is None or trocr_processor is None:
+            return {
+                "transcribed_text": "",
+                "confidence": 0.0,
+                "error": "TrOCR model not loaded on server",
+            }
+
+        from PIL import Image as PILImage
+        image = PILImage.open(image_path).convert("RGB")
+
+        pixel_values = trocr_processor(images=image, return_tensors="pt").pixel_values
+        if torch.cuda.is_available():
+            pixel_values = pixel_values.to("cuda", dtype=torch.float16)
+            trocr_model.to("cuda")
+
+        with torch.no_grad():
+            generated_ids = trocr_model.generate(pixel_values, max_length=512)
+        text = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+        return {
+            "transcribed_text": text,
+            "confidence": 0.9,
+            "model": "trocr-handwritten",
+        }
+    except Exception as e:
+        print(f"[OCR_HANDWRITTEN] Error: {e}")
+        return {"transcribed_text": "", "confidence": 0.0, "error": str(e)}
 
 @spaces.GPU
 def anpr(image_path):
@@ -475,6 +531,40 @@ def entity_resolve(payload):
         })
     return results
 
+def ner_extract(text_payload):
+    """Named Entity Recognition via Qwen2.5-7B — extracts persons, phones,
+    accounts, vehicles, organizations, and locations from raw case text."""
+    data = json.loads(text_payload) if isinstance(text_payload, str) else (text_payload or {})
+    text = data.get("text", "")
+
+    prompt = (
+        "Extract structured entities from this text as JSON with keys: "
+        "persons (list of names), phones (list), accounts (list), vehicles (list), "
+        "organizations (list), locations (list), transcribed_text (echo the input text verbatim).\n\n"
+        f"Text: {text}"
+    )
+    try:
+        resp = hf_client.chat.completions.create(
+            model="Qwen/Qwen2.5-7B-Instruct",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800,
+            temperature=0.1,
+        )
+        content = resp.choices[0].message.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        parsed = json.loads(content)
+        parsed.setdefault("transcribed_text", text)
+        return parsed
+    except Exception as e:
+        print(f"[NER] Error: {e}")
+        return {
+            "persons": [], "phones": [], "accounts": [], "vehicles": [],
+            "organizations": [], "locations": [], "transcribed_text": text,
+        }
+
 
 def summarize(case_data):
     """Case Fact-Sheet & Executive Summary (Qwen2.5-7B)"""
@@ -587,6 +677,13 @@ with gr.Blocks(title="Police AI Multi-Model Server") as demo:
         fir_out = gr.JSON(label="Structured CCTNS IIF-1 JSON")
         gr.Button("Extract FIR Information").click(fir_ocr, inputs=fir_in, outputs=fir_out, api_name="fir_ocr")
 
+    with gr.Tab("Handwritten OCR (Local TrOCR)"):
+        ocr_in = gr.Image(type="filepath", label="Upload Handwritten Diary/FIR Page")
+        ocr_out = gr.JSON(label="Transcribed Text")
+        gr.Button("Transcribe Handwriting").click(
+            ocr_handwritten, inputs=ocr_in, outputs=ocr_out, api_name="ocr_handwritten"
+        )
+    
     with gr.Tab("ANPR (Local YOLO+CRNN)"):
         anpr_in = gr.Image(type="filepath", label="Vehicle Plate Image")
         anpr_out = gr.JSON(label="Plate & RTO Details")
@@ -617,6 +714,11 @@ with gr.Blocks(title="Police AI Multi-Model Server") as demo:
         ent_out = gr.JSON(label="Merge Decisions")
         gr.Button("Resolve Aliases").click(entity_resolve, inputs=ent_in, outputs=ent_out, api_name="entity_resolve")
 
+    with gr.Tab("NER Extraction (Qwen2.5 API)"):
+        ner_in = gr.JSON(label="Text Payload {text: ...}")
+        ner_out = gr.JSON(label="Extracted Entities")
+        gr.Button("Extract Entities").click(ner_extract, inputs=ner_in, outputs=ner_out, api_name="ner")
+    
     with gr.Tab("Case Summarizer (Qwen2.5 API)"):
         sum_in = gr.JSON(label="Case Evidence JSON")
         sum_out = gr.JSON(label="Fact Sheet")
